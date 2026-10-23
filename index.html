@@ -474,14 +474,25 @@
           </div>
 
           <div class="space-y-2">
-            <input 
-              id="adminPasswordInput" 
-              type="password" 
-              placeholder="كلمة المرور الافتراضية: admin123" 
-              class="w-full text-xs border border-slate-300 rounded-xl p-3 focus:outline-none focus:ring-2 focus:ring-brand-500 text-center tracking-widest"
-            >
-            <div id="adminPasswordError" class="hidden text-xs text-red-600 text-center font-bold">
-              كلمة المرور غير صحيحة، حاول مجدداً!
+            <div class="relative flex items-center">
+              <input 
+                id="adminPasswordInput" 
+                type="password" 
+                placeholder="كلمة المرور الافتراضية: admin123" 
+                class="w-full text-xs border border-slate-300 rounded-xl p-3 pr-4 pl-10 focus:outline-none focus:ring-2 focus:ring-brand-500 text-center tracking-wider"
+              >
+              <button 
+                id="toggleAdminPasswordVisibilityBtn" 
+                type="button" 
+                class="absolute left-3 text-slate-400 hover:text-slate-600 p-1 transition-colors"
+                title="إظهار / إخفاء كلمة المرور"
+              >
+                <i data-lucide="eye" id="adminPasswordEyeIcon" class="w-4 h-4"></i>
+              </button>
+            </div>
+            <div id="adminPasswordHint" class="hidden text-[11px] text-amber-800 bg-amber-50 p-2 rounded-lg border border-amber-200 text-center font-medium leading-relaxed"></div>
+            <div id="adminPasswordError" class="hidden text-xs text-red-600 text-center font-bold leading-relaxed">
+              كلمة المرور غير صحيحة، تأكد من لغة الكيبورد واضغط على أيقونة العين لمعاينة ما كتبته!
             </div>
           </div>
 
@@ -2061,21 +2072,52 @@ ${notes ? `📝 *ملاحظات خاصة:*\n${notes}\n==========================
     // -------------------------------------------------------------
     // ADMIN DASHBOARD LOGIC
     // -------------------------------------------------------------
+    // Helper: Normalize Eastern Arabic numbers & remove hidden unicode
+    function normalizePassword(str) {
+      if (!str) return "";
+      const arabicNumerals = ['٠','١','٢','٣','٤','٥','٦','٧','٨','٩'];
+      let res = str;
+      for (let i = 0; i < 10; i++) {
+        res = res.split(arabicNumerals[i]).join(i.toString());
+      }
+      // Remove zero-width spaces, directional marks, BOM
+      res = res.replace(/[‎‏​‪-‮﻿]/g, "");
+      return res.trim();
+    }
+
+    // Helper: Map common Arabic keyboard characters to English QWERTY
+    function convertArabicKeyboardToEnglish(str) {
+      const map = {
+        'ش': 'a', 'ي': 'd', 'ة': 'm', 'ه': 'i', 'ى': 'n', 'ن': 'n',
+        'س': 's', 'ب': 'b', 'ل': 'g', 'ا': 'h', 'ت': 'j', 'ك': 'k',
+        'م': 'l', 'ئ': 'z', 'ء': 'x', 'ؤ': 'c', 'ر': 'v', 'لا': 'b',
+        'ق': 'r', 'ف': 't', 'غ': 'y', 'ع': 'u', 'خ': 'o', 'ح': 'p',
+        'ج': '[', 'د': ']'
+      };
+      return str.split('').map(c => map[c] || c).join('');
+    }
+
     function openAdminModal() {
       const modal = document.getElementById("adminModal");
       const pwdStep = document.getElementById("adminPasswordStep");
       const ctrlStep = document.getElementById("adminControlStep");
       const pwdInput = document.getElementById("adminPasswordInput");
       const pwdError = document.getElementById("adminPasswordError");
+      const pwdHint = document.getElementById("adminPasswordHint");
+      const eyeIcon = document.getElementById("adminPasswordEyeIcon");
 
       if (modal) modal.classList.remove("hidden");
       if (pwdStep) pwdStep.classList.remove("hidden");
       if (ctrlStep) ctrlStep.classList.add("hidden");
       if (pwdInput) {
         pwdInput.value = "";
+        pwdInput.type = "password";
         pwdInput.focus();
       }
+      if (eyeIcon) eyeIcon.setAttribute("data-lucide", "eye");
       if (pwdError) pwdError.classList.add("hidden");
+      if (pwdHint) pwdHint.classList.add("hidden");
+      if (window.lucide) window.lucide.createIcons();
     }
 
     function closeAdminModal() {
@@ -2086,12 +2128,26 @@ ${notes ? `📝 *ملاحظات خاصة:*\n${notes}\n==========================
     function handleAdminLogin() {
       const input = document.getElementById("adminPasswordInput");
       const error = document.getElementById("adminPasswordError");
+      const hint = document.getElementById("adminPasswordHint");
       const pwdStep = document.getElementById("adminPasswordStep");
       const ctrlStep = document.getElementById("adminControlStep");
 
       if (!input) return;
-      if (input.value.trim() === state.adminPassword) {
+
+      const rawVal = input.value;
+      const normalized = normalizePassword(rawVal);
+      const converted = convertArabicKeyboardToEnglish(normalized);
+      const target = state.adminPassword;
+
+      const isMatch = 
+        normalized === target || 
+        normalized.toLowerCase() === target.toLowerCase() ||
+        converted === target ||
+        converted.toLowerCase() === target.toLowerCase();
+
+      if (isMatch) {
         if (error) error.classList.add("hidden");
+        if (hint) hint.classList.add("hidden");
         if (pwdStep) pwdStep.classList.add("hidden");
         if (ctrlStep) ctrlStep.classList.remove("hidden");
 
@@ -2101,7 +2157,10 @@ ${notes ? `📝 *ملاحظات خاصة:*\n${notes}\n==========================
         updateStatusBanner(state.isLiveSynced);
         showToast("تم تسجيل الدخول للوحة التحكم بنجاح", "success");
       } else {
-        if (error) error.classList.remove("hidden");
+        if (error) {
+          error.classList.remove("hidden");
+          error.textContent = "كلمة المرور غير صحيحة، تأكد من لغة الكيبورد واضغط على أيقونة العين لمعاينة ما كتبته!";
+        }
         input.focus();
       }
     }
@@ -2245,12 +2304,40 @@ ${notes ? `📝 *ملاحظات خاصة:*\n${notes}\n==========================
       const saveNewPasswordBtn = document.getElementById("saveNewPasswordBtn");
       const adminLogoutBtn = document.getElementById("adminLogoutBtn");
 
+      const toggleAdminPasswordVisibilityBtn = document.getElementById("toggleAdminPasswordVisibilityBtn");
+      const adminPasswordEyeIcon = document.getElementById("adminPasswordEyeIcon");
+
       if (openAdminBtn) openAdminBtn.addEventListener("click", openAdminModal);
       if (closeAdminModalBtn) closeAdminModalBtn.addEventListener("click", closeAdminModal);
       if (adminLoginBtn) adminLoginBtn.addEventListener("click", handleAdminLogin);
+      
       if (adminPasswordInput) {
         adminPasswordInput.addEventListener("keydown", (e) => {
           if (e.key === "Enter") handleAdminLogin();
+        });
+        
+        // Real-time detection of Arabic keyboard input
+        adminPasswordInput.addEventListener("input", (e) => {
+          const val = e.target.value;
+          const hint = document.getElementById("adminPasswordHint");
+          if (!hint) return;
+          
+          const hasArabic = /[\u0600-\u06FF]/.test(val);
+          if (hasArabic) {
+            hint.textContent = "تنبيه: أنت تكتب بأحرف عربية. سيتعرف عليها النظام تلقائياً، أو يمكنك تحويل لغة الكيبورد إلى الإنجليزية (Alt + Shift).";
+            hint.classList.remove("hidden");
+          } else {
+            hint.classList.add("hidden");
+          }
+        });
+      }
+
+      if (toggleAdminPasswordVisibilityBtn && adminPasswordInput && adminPasswordEyeIcon) {
+        toggleAdminPasswordVisibilityBtn.addEventListener("click", () => {
+          const isPass = adminPasswordInput.type === "password";
+          adminPasswordInput.type = isPass ? "text" : "password";
+          adminPasswordEyeIcon.setAttribute("data-lucide", isPass ? "eye-off" : "eye");
+          if (window.lucide) window.lucide.createIcons();
         });
       }
 
